@@ -1,2 +1,1 @@
 pyte==0.8.2
-pyinstaller==6.19.0
