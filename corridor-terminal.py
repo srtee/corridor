@@ -161,7 +161,7 @@ def main(stdscr):
             stream = pyte.Stream(screen)
 
         try:
-            ready, _, _ = select.select([master, sys.stdin], [], [], 0.05)
+            ready, _, _ = select.select([master, sys.stdin], [], [], 0.1)
         except OSError:
             break
 
@@ -266,6 +266,7 @@ def main(stdscr):
             except curses.error:
                 pass
 
+        stdscr.move(0, 0)
         stdscr.refresh()
 
         try:
