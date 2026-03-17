@@ -5,7 +5,7 @@
 set -e
 
 # Configuration
-BIN_NAME="corridor-terminal"
+BIN_NAME="corridor"
 INSTALL_DIR="${HOME}/.local/bin"
 REPO_URL="${REPO_URL:-https://github.com/srtee/corridor/releases/latest/download}"
 
