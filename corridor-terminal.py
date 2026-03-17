@@ -72,10 +72,31 @@ def wrap_text(text, width):
 def read_session_data(session, url):
     api_url = f"{url}/api/message?session={session}"
     try:
-        with urllib.request.urlopen(api_url, timeout=1) as resp:
-            data = json.loads(resp.read().decode())
-            return data.get("message", "")
-    except Exception:
+        req = urllib.request.Request(
+            api_url, headers={"User-Agent": "curl/8.0.1", "Accept": "*/*"}
+        )
+        if api_url.startswith("https://"):
+            import ssl
+
+            ctx = ssl.create_default_context()
+            ctx.check_hostname = False
+            ctx.verify_mode = ssl.CERT_NONE
+            with urllib.request.urlopen(req, timeout=5, context=ctx) as resp:
+                data = json.loads(resp.read().decode())
+                return data.get("message", "")
+        else:
+            with urllib.request.urlopen(req, timeout=5) as resp:
+                data = json.loads(resp.read().decode())
+                return data.get("message", "")
+    except urllib.request.HTTPError as e:
+        import sys
+
+        print(f"DEBUG: HTTP {e.code} for {api_url}", file=sys.stderr)
+        return ""
+    except Exception as e:
+        import sys
+
+        print(f"DEBUG: fetch failed for {api_url}: {e}", file=sys.stderr)
         return ""
 
 

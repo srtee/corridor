@@ -264,16 +264,22 @@ def make_handler(session):
     class CustomHandler(BaseHTTPRequestHandler):
         session_name = session
 
+        def get_session(self):
+            parsed = urlparse(self.path)
+            params = parse_qs(parsed.query)
+            return params.get("session", [self.session_name])[0]
+
         def do_GET(self):
             parsed = urlparse(self.path)
+            sess = self.get_session()
             if parsed.path == "/":
-                html = HTML.replace("session || 'default'", f"'{session}'")
+                html = HTML.replace("session || 'default'", f"'{sess}'")
                 self.send_response(200)
                 self.send_header("Content-Type", "text/html")
                 self.end_headers()
                 self.wfile.write(html.encode())
             elif parsed.path == "/api/message":
-                filepath = SESSION_FILE.format(session=session)
+                filepath = SESSION_FILE.format(session=sess)
                 try:
                     with open(filepath, "r") as f:
                         message = f.read()
@@ -289,11 +295,12 @@ def make_handler(session):
 
         def do_POST(self):
             if self.path == "/api/update":
+                sess = self.get_session()
                 length = int(self.headers.get("Content-Length", 0))
                 body = self.rfile.read(length)
                 data = json.loads(body)
 
-                filepath = SESSION_FILE.format(session=session)
+                filepath = SESSION_FILE.format(session=sess)
                 with open(filepath, "w") as f:
                     f.write(data.get("message", ""))
 
