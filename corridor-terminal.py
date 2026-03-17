@@ -118,7 +118,9 @@ def main(stdscr):
 
     args = parse_args()
     session = args.session if args.session else os.environ.get("SESSION", "default")
-    url = args.url if args.url else os.environ.get("URL", "http://localhost:8080")
+    url = (
+        args.url if args.url else os.environ.get("URL", "http://localhost:8080")
+    ).rstrip("/")
     debug = args.debug
 
     master, slave = pty.openpty()
@@ -182,7 +184,7 @@ def main(stdscr):
 
         try:
             stdscr.addch(sep_y, 0, "├", curses.color_pair(6))
-            session_text = f" {session} "
+            session_text = f" {session} @ {url} "
             text_start = max(1, (w - len(session_text)) // 2)
             stdscr.addstr(sep_y, 1, "─" * (text_start - 1), curses.color_pair(6))
             stdscr.addstr(
