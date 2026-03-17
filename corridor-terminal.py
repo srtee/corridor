@@ -46,6 +46,12 @@ def parse_args():
         default=None,
         help="Base URL (e.g., http://localhost:4000 or https://my.remote.url)",
     )
+    parser.add_argument(
+        "--debug",
+        "-d",
+        action="store_true",
+        help="Enable debug output to stderr",
+    )
     return parser.parse_args()
 
 
@@ -69,7 +75,7 @@ def wrap_text(text, width):
     return lines
 
 
-def read_session_data(session, url):
+def read_session_data(session, url, debug=False):
     api_url = f"{url}/api/message?session={session}"
     try:
         req = urllib.request.Request(
@@ -83,21 +89,19 @@ def read_session_data(session, url):
             ctx.verify_mode = ssl.CERT_NONE
             with urllib.request.urlopen(req, timeout=5, context=ctx) as resp:
                 data = json.loads(resp.read().decode())
-                return data.get("message", "")
+                return data.get("message", ""), None
         else:
             with urllib.request.urlopen(req, timeout=5) as resp:
                 data = json.loads(resp.read().decode())
-                return data.get("message", "")
+                return data.get("message", ""), None
     except urllib.request.HTTPError as e:
-        import sys
-
-        print(f"DEBUG: HTTP {e.code} for {api_url}", file=sys.stderr)
-        return ""
+        if debug:
+            print(f"DEBUG: HTTP {e.code} for {api_url}", file=sys.stderr)
+        return "", f"HTTP {e.code}"
     except Exception as e:
-        import sys
-
-        print(f"DEBUG: fetch failed for {api_url}: {e}", file=sys.stderr)
-        return ""
+        if debug:
+            print(f"DEBUG: fetch failed for {api_url}: {e}", file=sys.stderr)
+        return "", str(e)
 
 
 def main(stdscr):
@@ -115,6 +119,7 @@ def main(stdscr):
     args = parse_args()
     session = args.session if args.session else os.environ.get("SESSION", "default")
     url = args.url if args.url else os.environ.get("URL", "http://localhost:8080")
+    debug = args.debug
 
     master, slave = pty.openpty()
     shell = os.environ.get("SHELL", "/bin/bash")
@@ -133,6 +138,7 @@ def main(stdscr):
 
     screen = None
     stream = None
+    last_error = None
 
     while True:
         h, w = stdscr.getmaxyx()
@@ -235,7 +241,9 @@ def main(stdscr):
                 except curses.error:
                     pass
 
-        session_data = read_session_data(session, url)
+        session_data, fetch_error = read_session_data(session, url, debug)
+        if fetch_error:
+            last_error = fetch_error
         web_start = main_h + 1
         web_lines = 4
 
@@ -246,6 +254,11 @@ def main(stdscr):
                     stdscr.addstr(web_start + i, 0, line, curses.A_BOLD)
                 except curses.error:
                     pass
+        elif last_error:
+            try:
+                stdscr.addstr(web_start, 0, f"[{last_error}]", curses.color_pair(1))
+            except curses.error:
+                pass
         else:
             placeholder = "[web panel empty - send data via web interface]"
             try:
