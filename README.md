@@ -1,37 +1,35 @@
 # Corridor
 
-Terminal assistant display with web control.
+Terminal multiplexer with web-based message display.
 
 ## Usage
 
-**Terminal (helper sees commands):**
+**Terminal (displays shell + messages):**
 ```bash
-python3 corridor.py mysession
+# Local mode (default port 8080)
+SESSION=mysession ./terminal.py
+
+# Or with URL
+URL=http://localhost:4000 SESSION=mysession ./terminal.py
+./terminal.py -u https://my.remote.url -s mysession
 ```
 
-**Web (you type commands):**
+**Server (send messages via web):**
 ```bash
+# Default port 8080
 SESSION=mysession python3 server.py
-# Open http://localhost:8080?session=mysession
+
+# Custom port
+python3 server.py -p 4000
+# Open http://localhost:4000?session=mysession
 ```
 
-## Recommended: tmux split
+## Architecture
 
-To keep coding while corridor runs, use tmux:
+- `terminal.py` - Curses-based terminal multiplexer with pty and pyte for ANSI parsing. Main terminal area + 5-line bottom panel (1 separator + 4 message lines).
+- `server.py` - HTTP server with web UI for sending messages.
 
-```bash
-# Split terminal horizontally
-tmux split-window -v
+## Environment Variables
 
-# Run corridor in the bottom pane
-python3 corridor.py mysession
-
-# Use the top pane for your shell
-```
-
-## JSON format (for direct file editing)
-
-`/tmp/corridor-{session}.json`:
-```json
-{"message": "command here", "hint": "hint here"}
-```
+- `SESSION` - Session name (used by both server and terminal)
+- `URL` - Base URL for terminal to fetch messages from (default: http://localhost:8080)
