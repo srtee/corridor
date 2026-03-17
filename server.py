@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
+import argparse
 import json
 import os
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs
 
-PORT = int(os.environ.get("PORT", 8080))
 SESSION_FILE = "/tmp/corridor-{session}.json"
 
 HTML = """<!DOCTYPE html>
@@ -102,6 +102,26 @@ HTML = """<!DOCTYPE html>
             color: #8b949e;
             margin-top: 8px;
         }
+        .last-message {
+            margin-top: 20px;
+            padding: 12px;
+            background: #161b22;
+            border: 1px solid #30363d;
+            border-radius: 6px;
+        }
+        .last-message-label {
+            font-size: 11px;
+            color: #8b949e;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 8px;
+        }
+        .last-message-text {
+            color: #c9d1d9;
+            font-family: inherit;
+            font-size: 14px;
+            word-break: break-all;
+        }
     </style>
 </head>
 <body>
@@ -112,36 +132,46 @@ HTML = """<!DOCTYPE html>
         </div>
         <div class="form-group">
             <label>Command / Message</label>
-            <textarea id="message" placeholder="Enter command or hint..."></textarea>
-        </div>
-        <div class="form-group">
-            <label>Secondary Info</label>
-            <input type="text" id="hint" placeholder="Optional hint or explanation">
+            <textarea id="message" placeholder="Enter message..."></textarea>
         </div>
         <button id="send">Send (Ctrl+Enter)</button>
-        <p class="hint-text">Data syncs to terminal display</p>
+        <div class="last-message">
+            <div class="last-message-label">Last Message Sent</div>
+            <div class="last-message-text" id="last-message"></div>
+        </div>
     </div>
     <script>
         const session = new URLSearchParams(window.location.search).get('session') || 'default';
         document.getElementById('session').textContent = session;
         
         const msgEl = document.getElementById('message');
-        const hintEl = document.getElementById('hint');
+        const lastMsgEl = document.getElementById('last-message');
+        
+        async function loadLastMessage() {
+            try {
+                const resp = await fetch('/api/message');
+                const data = await resp.json();
+                lastMsgEl.textContent = data.message || '(none)';
+            } catch (e) {
+                lastMsgEl.textContent = '(none)';
+            }
+        }
         
         async function send() {
             const message = msgEl.value;
-            const hint = hintEl.value;
-            if (!message && !hint) return;
+            if (!message) return;
             
             await fetch('/api/update', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({message, hint})
+                body: JSON.stringify({message})
             });
             
             msgEl.value = '';
-            hintEl.value = '';
+            lastMsgEl.textContent = message;
         }
+        
+        loadLastMessage();
         
         document.getElementById('send').addEventListener('click', send);
         
@@ -219,7 +249,7 @@ class SessionHandler(Handler):
 
             filepath = SESSION_FILE.format(session=self.session)
             with open(filepath, "w") as f:
-                json.dump(data, f)
+                f.write(data.get("message", ""))
 
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
@@ -242,6 +272,17 @@ def make_handler(session):
                 self.send_header("Content-Type", "text/html")
                 self.end_headers()
                 self.wfile.write(html.encode())
+            elif parsed.path == "/api/message":
+                filepath = SESSION_FILE.format(session=session)
+                try:
+                    with open(filepath, "r") as f:
+                        message = f.read()
+                except FileNotFoundError:
+                    message = ""
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(json.dumps({"message": message}).encode())
             else:
                 self.send_response(404)
                 self.end_headers()
@@ -254,7 +295,7 @@ def make_handler(session):
 
                 filepath = SESSION_FILE.format(session=session)
                 with open(filepath, "w") as f:
-                    json.dump(data, f)
+                    f.write(data.get("message", ""))
 
                 self.send_response(200)
                 self.send_header("Content-Type", "application/json")
@@ -271,9 +312,15 @@ def make_handler(session):
 
 
 def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--port", "-p", type=int, default=8080, help="Port to run server on"
+    )
+    args = parser.parse_args()
+
     session = os.environ.get("SESSION", "default")
-    server = HTTPServer(("", PORT), make_handler(session))
-    print(f"Corridor server running at http://localhost:{PORT}?session={session}")
+    server = HTTPServer(("", args.port), make_handler(session))
+    print(f"Corridor server running at http://localhost:{args.port}?session={session}")
     try:
         server.serve_forever()
     except KeyboardInterrupt:
