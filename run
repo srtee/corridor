@@ -1,0 +1,17 @@
+#!/bin/bash
+
+SESSION="${1:-corridor}"
+CORRIDOR_PATH="$(dirname "$0")/corridor.py"
+
+SESSION_EXISTS=$(tmux list-sessions 2>/dev/null | grep -c "^$SESSION:" || true)
+
+if [ "$SESSION_EXISTS" -eq 0 ]; then
+    tmux new-session -d -s "$SESSION" "bash -c 'exec bash; tmux kill-session -t $SESSION'"
+    tmux split-window -h -t "$SESSION:0" -l 3 "python3 $CORRIDOR_PATH $SESSION; tmux kill-session -t $SESSION 2>/dev/null"
+    tmux select-pane -t "$SESSION:0.0"
+else
+    echo "Session '$SESSION' already exists. Attach with: tmux attach -t $SESSION"
+    exit 1
+fi
+
+tmux attach-session -t "$SESSION"
