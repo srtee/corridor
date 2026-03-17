@@ -2,6 +2,18 @@
 
 Terminal multiplexer with web-based message display.
 
+## Installation
+
+```bash
+curl -sSL https://raw.githubusercontent.com/srtee/corridor/main/install.sh | sh
+```
+
+Or manually:
+```bash
+curl -L -o corridor-terminal https://github.com/srtee/corridor/releases/latest/download/corridor-terminal
+chmod +x corridor-terminal
+```
+
 ## Usage
 
 **Terminal (displays shell + messages):**
