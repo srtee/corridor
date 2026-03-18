@@ -1,7 +1,7 @@
 use clap::Parser;
 use crossterm::{
     cursor::{Hide, MoveTo, Show},
-    style::{Attribute, Color, Print, SetAttribute, SetForegroundColor},
+    style::{Attribute, Color, Print, SetAttribute, SetBackgroundColor, SetForegroundColor},
     terminal::{Clear, ClearType, EnterAlternateScreen, LeaveAlternateScreen},
     ExecutableCommand,
 };
@@ -81,18 +81,22 @@ fn render_screen(screen: &vt100::Screen, stdout: &mut io::Stdout) {
 
                 let c = if cell.contents().is_empty() { ' ' } else { cell.contents().chars().next().unwrap_or(' ') };
 
+                let fg = cell.fgcolor();
+                let bg = cell.bgcolor();
+                let fg_color = color_from_vt100(fg);
+                let bg_color = color_from_vt100(bg);
+
+                stdout.execute(SetForegroundColor(fg_color)).ok();
+                stdout.execute(SetBackgroundColor(bg_color)).ok();
+
                 let mut attrs = Vec::new();
                 if cell.bold() { attrs.push(Attribute::Bold); }
                 if cell.underline() { attrs.push(Attribute::Underlined); }
                 if cell.inverse() { attrs.push(Attribute::Reverse); }
 
-                let fg = cell.fgcolor();
-                let fg_color = color_from_vt100(fg);
-
                 for attr in &attrs {
                     stdout.execute(SetAttribute(*attr)).ok();
                 }
-                stdout.execute(SetForegroundColor(fg_color)).ok();
                 stdout.execute(Print(c)).ok();
                 stdout.execute(SetAttribute(Attribute::Reset)).ok();
             }
@@ -279,12 +283,15 @@ fn main() -> io::Result<()> {
                 if n > 0 {
                     parser.process(&buf[..n as usize]);
                     stdout.execute(Clear(ClearType::All)).ok();
+                    
+                    let (cursor_row, cursor_col) = parser.screen().cursor_position();
+                    
                     render_screen(parser.screen(), &mut stdout);
 
-                    let sep_y = main_rows as i32;
+                    let sep_y = main_rows;
 
                     stdout.execute(SetForegroundColor(Color::Cyan)).ok();
-                    stdout.execute(MoveTo(0, sep_y as u16)).ok();
+                    stdout.execute(MoveTo(0, sep_y)).ok();
                     stdout.execute(Print("├")).ok();
 
                     let session_text = format!(" {} @ {} ", session, url);
@@ -292,25 +299,25 @@ fn main() -> io::Result<()> {
                     let text_start = std::cmp::max(1, text_start) as u16;
 
                     for x in 1..text_start {
-                        stdout.execute(MoveTo(x, sep_y as u16)).ok();
+                        stdout.execute(MoveTo(x, sep_y)).ok();
                         stdout.execute(Print("─")).ok();
                     }
 
-                    stdout.execute(MoveTo(text_start, sep_y as u16)).ok();
+                    stdout.execute(MoveTo(text_start, sep_y)).ok();
                     stdout.execute(SetAttribute(Attribute::Bold)).ok();
                     stdout.execute(Print(&session_text)).ok();
                     stdout.execute(SetAttribute(Attribute::Reset)).ok();
 
                     for x in (text_start as usize + session_text.len())..(cols as usize - 1) {
-                        stdout.execute(MoveTo(x as u16, sep_y as u16)).ok();
+                        stdout.execute(MoveTo(x as u16, sep_y)).ok();
                         stdout.execute(Print("─")).ok();
                     }
 
-                    stdout.execute(MoveTo(cols - 1, sep_y as u16)).ok();
+                    stdout.execute(MoveTo(cols - 1, sep_y)).ok();
                     stdout.execute(Print("┤")).ok();
                     stdout.execute(SetForegroundColor(Color::Reset)).ok();
 
-                    let web_start = sep_y as u16 + 1;
+                    let web_start = sep_y + 1;
                     let web_lines = 4;
 
                     if !session_data.is_empty() {
@@ -333,6 +340,8 @@ fn main() -> io::Result<()> {
                         stdout.execute(SetForegroundColor(Color::Reset)).ok();
                     }
 
+                    stdout.execute(MoveTo(cursor_col as u16, cursor_row as u16)).ok();
+                    stdout.execute(Show).ok();
                     stdout.flush().ok();
                 } else if n == 0 {
                     break;
