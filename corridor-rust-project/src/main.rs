@@ -1,11 +1,18 @@
 use clap::Parser;
 use crossterm::{
-    cursor::{Hide, MoveTo, Show},
-    style::{Attribute, Color, Print, SetAttribute, SetBackgroundColor, SetForegroundColor},
-    terminal::{Clear, ClearType, EnterAlternateScreen, LeaveAlternateScreen},
-    ExecutableCommand,
+    event::{poll, read, Event, KeyCode, KeyEventKind},
+    execute,
+    terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
-use std::io::{self, Write};
+use ratatui::{
+    backend::CrosstermBackend,
+    layout::{Constraint, Direction, Layout, Rect},
+    style::{Color, Modifier, Style},
+    text::{Line, Span},
+    widgets::{Paragraph, Widget},
+    Terminal,
+};
+use std::io::{self, Stdout};
 use std::os::fd::RawFd;
 
 #[derive(Parser, Debug)]
@@ -43,66 +50,84 @@ extern "C" {
     fn select(nfds: i32, readfds: *mut libc::fd_set, writefds: *mut libc::fd_set, exceptfds: *mut libc::fd_set, timeout: *const Timeval) -> i32;
 }
 
-const PANEL_HEIGHT: usize = 5;
+const PANEL_HEIGHT: u16 = 5;
 
 fn color_from_vt100(fg: vt100::Color) -> Color {
     match fg {
         vt100::Color::Default => Color::Reset,
         vt100::Color::Idx(i) => match i {
             0 => Color::Black,
-            1 => Color::DarkRed,
-            2 => Color::DarkGreen,
-            3 => Color::DarkYellow,
-            4 => Color::DarkBlue,
-            5 => Color::DarkMagenta,
-            6 => Color::DarkCyan,
-            7 => Color::Grey,
-            8 => Color::DarkGrey,
-            9 => Color::Red,
-            10 => Color::Green,
-            11 => Color::Yellow,
-            12 => Color::Blue,
-            13 => Color::Magenta,
-            14 => Color::Cyan,
-            15 => Color::White,
-            _ => Color::Reset,
+            1 => Color::Red,
+            2 => Color::Green,
+            3 => Color::Yellow,
+            4 => Color::Blue,
+            5 => Color::Magenta,
+            6 => Color::Cyan,
+            7 => Color::White,
+            8 => Color::DarkGray,
+            9 => Color::LightRed,
+            10 => Color::LightGreen,
+            11 => Color::LightYellow,
+            12 => Color::LightBlue,
+            13 => Color::LightMagenta,
+            14 => Color::LightCyan,
+            15 => Color::Gray,
+            n => Color::Indexed(n),
         },
-        vt100::Color::Rgb(r, g, b) => Color::Rgb { r, g, b },
+        vt100::Color::Rgb(r, g, b) => Color::Rgb(r, g, b),
     }
 }
 
-fn render_screen(screen: &vt100::Screen, stdout: &mut io::Stdout) {
-    let (rows, cols) = screen.size();
+struct TerminalScreen<'a> {
+    screen: &'a vt100::Screen,
+}
 
-    for row in 0..rows {
-        for col in 0..cols {
-            if let Some(cell) = screen.cell(row, col) {
-                stdout.execute(MoveTo(col as u16, row as u16)).ok();
+impl<'a> TerminalScreen<'a> {
+    fn new(screen: &'a vt100::Screen) -> Self {
+        Self { screen }
+    }
+}
 
-                let c = if cell.contents().is_empty() { ' ' } else { cell.contents().chars().next().unwrap_or(' ') };
+impl<'a> Widget for TerminalScreen<'a> {
+    fn render(self, area: Rect, buf: &mut ratatui::buffer::Buffer) {
+        let (rows, cols) = self.screen.size();
 
-                let fg = cell.fgcolor();
-                let bg = cell.bgcolor();
-                let fg_color = color_from_vt100(fg);
-                let bg_color = color_from_vt100(bg);
-
-                stdout.execute(SetForegroundColor(fg_color)).ok();
-                stdout.execute(SetBackgroundColor(bg_color)).ok();
-
-                let mut attrs = Vec::new();
-                if cell.bold() { attrs.push(Attribute::Bold); }
-                if cell.underline() { attrs.push(Attribute::Underlined); }
-                if cell.inverse() { attrs.push(Attribute::Reverse); }
-
-                for attr in &attrs {
-                    stdout.execute(SetAttribute(*attr)).ok();
+        for row in 0..rows {
+            for col in 0..cols {
+                if row as u16 >= area.height || col as u16 >= area.width {
+                    continue;
                 }
-                stdout.execute(Print(c)).ok();
-                stdout.execute(SetAttribute(Attribute::Reset)).ok();
+
+                if let Some(cell) = self.screen.cell(row, col) {
+                    let x = area.x + col as u16;
+                    let y = area.y + row as u16;
+
+                    let c = if cell.contents().is_empty() { ' ' } else { cell.contents().chars().next().unwrap_or(' ') };
+
+                    let fg = cell.fgcolor();
+                    let bg = cell.bgcolor();
+                    let fg_color = color_from_vt100(fg);
+                    let bg_color = color_from_vt100(bg);
+
+                    let mut style = Style::default()
+                        .fg(fg_color)
+                        .bg(bg_color);
+
+                    if cell.bold() {
+                        style = style.add_modifier(Modifier::BOLD);
+                    }
+                    if cell.underline() {
+                        style = style.add_modifier(Modifier::UNDERLINED);
+                    }
+                    if cell.inverse() {
+                        style = style.add_modifier(Modifier::REVERSED);
+                    }
+
+                    buf[(x, y)].set_char(c).set_style(style);
+                }
             }
         }
     }
-    stdout.flush().ok();
 }
 
 fn wrap_text(text: &str, width: usize) -> Vec<String> {
@@ -181,6 +206,20 @@ async fn fetch_session_data(session: &str, url: &str, debug: bool) -> (String, O
     }
 }
 
+fn setup_terminal() -> io::Result<Terminal<CrosstermBackend<Stdout>>> {
+    enable_raw_mode()?;
+    let mut stdout = io::stdout();
+    execute!(stdout, EnterAlternateScreen)?;
+    let backend = CrosstermBackend::new(stdout);
+    Terminal::new(backend)
+}
+
+fn restore_terminal() -> io::Result<()> {
+    disable_raw_mode()?;
+    execute!(io::stdout(), LeaveAlternateScreen)?;
+    Ok(())
+}
+
 fn main() -> io::Result<()> {
     let args = Args::parse();
 
@@ -205,7 +244,7 @@ fn main() -> io::Result<()> {
         })
         .unwrap_or((80, 24));
 
-    let main_rows = (rows.saturating_sub(PANEL_HEIGHT + 1)) as u16;
+    let main_rows = (rows.saturating_sub(PANEL_HEIGHT as usize + 1)) as u16;
     let cols = cols as u16;
 
     let mut master_fd: RawFd = 0;
@@ -249,17 +288,12 @@ fn main() -> io::Result<()> {
         libc::close(slave_fd);
     }
 
-    let mut stdout = io::stdout();
-    stdout.execute(EnterAlternateScreen).ok();
-    stdout.execute(Hide).ok();
-    stdout.execute(Clear(ClearType::All)).ok();
+    let mut terminal = setup_terminal()?;
+    let rt = tokio::runtime::Runtime::new().unwrap();
 
     let mut parser = vt100::Parser::new(main_rows, cols, 0);
-
     let mut buf = [0u8; 4096];
-    use crossterm::event::{poll, read, Event, KeyCode, KeyEventKind};
 
-    let rt = tokio::runtime::Runtime::new().unwrap();
     let mut last_error: Option<String> = None;
     let mut session_data: String = String::new();
 
@@ -282,113 +316,10 @@ fn main() -> io::Result<()> {
                 let n = libc::read(master_fd, buf.as_mut_ptr() as *mut _, buf.len());
                 if n > 0 {
                     parser.process(&buf[..n as usize]);
-                    stdout.execute(Clear(ClearType::All)).ok();
-                    
-                    let (cursor_row, cursor_col) = parser.screen().cursor_position();
-                    
-                    render_screen(parser.screen(), &mut stdout);
-
-                    let sep_y = main_rows;
-
-                    stdout.execute(SetForegroundColor(Color::Cyan)).ok();
-                    stdout.execute(MoveTo(0, sep_y)).ok();
-                    stdout.execute(Print("├")).ok();
-
-                    let session_text = format!(" {} @ {} ", session, url);
-                    let text_start = ((cols as usize).saturating_sub(session_text.len())) / 2;
-                    let text_start = std::cmp::max(1, text_start) as u16;
-
-                    for x in 1..text_start {
-                        stdout.execute(MoveTo(x, sep_y)).ok();
-                        stdout.execute(Print("─")).ok();
-                    }
-
-                    stdout.execute(MoveTo(text_start, sep_y)).ok();
-                    stdout.execute(SetAttribute(Attribute::Bold)).ok();
-                    stdout.execute(Print(&session_text)).ok();
-                    stdout.execute(SetAttribute(Attribute::Reset)).ok();
-
-                    for x in (text_start as usize + session_text.len())..(cols as usize - 1) {
-                        stdout.execute(MoveTo(x as u16, sep_y)).ok();
-                        stdout.execute(Print("─")).ok();
-                    }
-
-                    stdout.execute(MoveTo(cols - 1, sep_y)).ok();
-                    stdout.execute(Print("┤")).ok();
-                    stdout.execute(SetForegroundColor(Color::Reset)).ok();
-
-                    let web_start = sep_y + 1;
-                    let web_lines = 4;
-
-                    if !session_data.is_empty() {
-                        let wrapped = wrap_text(&session_data, cols as usize - 1);
-                        for (i, line) in wrapped.iter().take(web_lines).enumerate() {
-                            stdout.execute(MoveTo(0, web_start + i as u16)).ok();
-                            stdout.execute(SetAttribute(Attribute::Bold)).ok();
-                            stdout.execute(Print(line)).ok();
-                            stdout.execute(SetAttribute(Attribute::Reset)).ok();
-                        }
-                    } else if let Some(ref err) = last_error {
-                        stdout.execute(MoveTo(0, web_start)).ok();
-                        stdout.execute(SetForegroundColor(Color::Red)).ok();
-                        stdout.execute(Print(format!("[{}]", err))).ok();
-                        stdout.execute(SetForegroundColor(Color::Reset)).ok();
-                    } else {
-                        stdout.execute(MoveTo(0, web_start)).ok();
-                        stdout.execute(SetForegroundColor(Color::Cyan)).ok();
-                        stdout.execute(Print("[web panel empty - send data via web interface]")).ok();
-                        stdout.execute(SetForegroundColor(Color::Reset)).ok();
-                    }
-
-                    stdout.execute(MoveTo(cursor_col as u16, cursor_row as u16)).ok();
-                    stdout.execute(Show).ok();
-                    stdout.flush().ok();
                 } else if n == 0 {
                     break;
                 }
             }
-        }
-
-        match poll(std::time::Duration::from_millis(10)) {
-            Ok(true) => {
-                if let Ok(Event::Key(key)) = read() {
-                    if key.kind == KeyEventKind::Press {
-                        match key.code {
-                            KeyCode::Char(c) => {
-                                let bytes = [c as u8];
-                                unsafe { libc::write(master_fd, bytes.as_ptr() as *const libc::c_void, 1); }
-                            }
-                            KeyCode::Enter => {
-                                unsafe { libc::write(master_fd, b"\n".as_ptr() as *const libc::c_void, 1); }
-                            }
-                            KeyCode::Backspace => {
-                                let b = [0x7f];
-                                unsafe { libc::write(master_fd, b.as_ptr() as *const libc::c_void, 1); }
-                            }
-                            KeyCode::Up => {
-                                unsafe { libc::write(master_fd, b"\x1b[A".as_ptr() as *const libc::c_void, 4); }
-                            }
-                            KeyCode::Down => {
-                                unsafe { libc::write(master_fd, b"\x1b[B".as_ptr() as *const libc::c_void, 4); }
-                            }
-                            KeyCode::Right => {
-                                unsafe { libc::write(master_fd, b"\x1b[C".as_ptr() as *const libc::c_void, 4); }
-                            }
-                            KeyCode::Left => {
-                                unsafe { libc::write(master_fd, b"\x1b[D".as_ptr() as *const libc::c_void, 4); }
-                            }
-                            KeyCode::Esc => {
-                                unsafe { libc::write(master_fd, b"\x1b".as_ptr() as *const libc::c_void, 1); }
-                            }
-                            KeyCode::Tab => {
-                                unsafe { libc::write(master_fd, b"\t".as_ptr() as *const libc::c_void, 1); }
-                            }
-                            _ => {}
-                        }
-                    }
-                }
-            }
-            _ => {}
         }
 
         let session_clone = session.clone();
@@ -400,14 +331,99 @@ fn main() -> io::Result<()> {
             session_data = data;
             last_error = None;
         }
+
+        terminal.draw(|f| {
+            let chunks = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([
+                    Constraint::Min(1),
+                    Constraint::Length(1),
+                    Constraint::Length(PANEL_HEIGHT),
+                ])
+                .split(f.area());
+
+            let term_area = chunks[0];
+            let sep_area = chunks[1];
+            let web_area = chunks[2];
+
+            let screen_widget = TerminalScreen::new(parser.screen());
+            f.render_widget(screen_widget, term_area);
+
+            let session_text = format!(" {} @ {} ", session, url);
+            let text_len = session_text.len() as u16;
+            let total_width = sep_area.width;
+            let left_dashes = total_width.saturating_sub(text_len + 2) / 2;
+            let right_dashes = total_width.saturating_sub(text_len + 2) - left_dashes;
+
+            let sep_line = Line::from(vec![
+                Span::styled("├", Style::default().fg(Color::Cyan)),
+                Span::styled("─".repeat(left_dashes as usize), Style::default().fg(Color::Cyan)),
+                Span::styled(session_text, Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+                Span::styled("─".repeat(right_dashes as usize), Style::default().fg(Color::Cyan)),
+                Span::styled("┤", Style::default().fg(Color::Cyan)),
+            ]);
+            f.render_widget(sep_line, sep_area);
+
+            let web_content: Vec<Line> = if !session_data.is_empty() {
+                let wrapped = wrap_text(&session_data, web_area.width as usize);
+                wrapped.iter().take(4).map(|s| Line::from(Span::styled(s.clone(), Style::default().add_modifier(Modifier::BOLD)))).collect()
+            } else if let Some(ref err) = last_error {
+                vec![Line::from(Span::styled(format!("[{}]", err), Style::default().fg(Color::Red)))]
+            } else {
+                vec![Line::from(Span::styled("[web panel empty - send data via web interface]".to_string(), Style::default().fg(Color::Cyan)))]
+            };
+
+            let web_paragraph = Paragraph::new(web_content);
+            f.render_widget(web_paragraph, web_area);
+
+            let (cursor_row, cursor_col) = parser.screen().cursor_position();
+            if cursor_row < term_area.height && cursor_col < term_area.width {
+                f.set_cursor_position((term_area.x + cursor_col, term_area.y + cursor_row));
+            }
+        })?;
+
+        if poll(std::time::Duration::from_millis(10))? {
+            if let Event::Key(key) = read()? {
+                if key.kind == KeyEventKind::Press {
+                    match key.code {
+                        KeyCode::Char(c) => {
+                            let bytes = [c as u8];
+                            unsafe { libc::write(master_fd, bytes.as_ptr() as *const libc::c_void, 1); }
+                        }
+                        KeyCode::Enter => {
+                            unsafe { libc::write(master_fd, b"\n".as_ptr() as *const libc::c_void, 1); }
+                        }
+                        KeyCode::Backspace => {
+                            let b = [0x7f];
+                            unsafe { libc::write(master_fd, b.as_ptr() as *const libc::c_void, 1); }
+                        }
+                        KeyCode::Up => {
+                            unsafe { libc::write(master_fd, b"\x1b[A".as_ptr() as *const libc::c_void, 4); }
+                        }
+                        KeyCode::Down => {
+                            unsafe { libc::write(master_fd, b"\x1b[B".as_ptr() as *const libc::c_void, 4); }
+                        }
+                        KeyCode::Right => {
+                            unsafe { libc::write(master_fd, b"\x1b[C".as_ptr() as *const libc::c_void, 4); }
+                        }
+                        KeyCode::Left => {
+                            unsafe { libc::write(master_fd, b"\x1b[D".as_ptr() as *const libc::c_void, 4); }
+                        }
+                        KeyCode::Esc => {
+                            unsafe { libc::write(master_fd, b"\x1b".as_ptr() as *const libc::c_void, 1); }
+                        }
+                        KeyCode::Tab => {
+                            unsafe { libc::write(master_fd, b"\t".as_ptr() as *const libc::c_void, 1); }
+                        }
+                        _ => {}
+                    }
+                }
+            }
+        }
     }
 
-    stdout.execute(LeaveAlternateScreen).ok();
-    stdout.execute(Show).ok();
-
-    unsafe {
-        libc::close(master_fd);
-    }
+    restore_terminal()?;
+    unsafe { libc::close(master_fd); }
 
     Ok(())
 }
