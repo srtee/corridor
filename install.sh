@@ -68,9 +68,9 @@ DOWNLOAD_URL="${REPO_URL}/${EXECUTABLE}"
 echo "Downloading ${DOWNLOAD_URL}..."
 
 if command -v curl >/dev/null 2>&1; then
-    curl -fsSL "${DOWNLOAD_URL}" -o "${INSTALL_DIR}/${BIN_NAME}"
+    curl -#SL "${DOWNLOAD_URL}" -o "${INSTALL_DIR}/${BIN_NAME}"
 elif command -v wget >/dev/null 2>&1; then
-    wget -q "${DOWNLOAD_URL}" -O "${INSTALL_DIR}/${BIN_NAME}"
+    wget --show-progress "${DOWNLOAD_URL}" -O "${INSTALL_DIR}/${BIN_NAME}"
 else
     echo "Error: curl or wget is required to download the executable"
     exit 1
@@ -79,26 +79,34 @@ fi
 # Make executable
 chmod 755 "${INSTALL_DIR}/${BIN_NAME}"
 
-# Check if install directory is in PATH
+# Check if install directory is in PATH and add if needed
 PATH_LINE="export PATH=\"\${HOME}/.local/bin:\${PATH}\""
+BASHRC_ADDED=0
+PROFILE_ADDED=0
 
 if [ -f "${HOME}/.bashrc" ]; then
     if ! grep -q "${INSTALL_DIR}" "${HOME}/.bashrc" 2>/dev/null; then
-        echo ""
-        echo "Adding ${INSTALL_DIR} to PATH in ${HOME}/.bashrc..."
         echo "" >> "${HOME}/.bashrc"
         echo "# Added by corridor install script" >> "${HOME}/.bashrc"
         echo "${PATH_LINE}" >> "${HOME}/.bashrc"
-        echo "Please run: source ${HOME}/.bashrc"
+        BASHRC_ADDED=1
     fi
 fi
 
-# Also check .profile for other shells
 if [ -f "${HOME}/.profile" ] && ! grep -q "${INSTALL_DIR}" "${HOME}/.profile" 2>/dev/null; then
     echo "" >> "${HOME}/.profile"
     echo "# Added by corridor install script" >> "${HOME}/.profile"
     echo "${PATH_LINE}" >> "${HOME}/.profile"
+    PROFILE_ADDED=1
 fi
 
 echo "Installation complete!"
-echo "Run 'corridor' to start, or restart your shell."
+echo "Run 'corridor' to start."
+
+if [ "${BASHRC_ADDED}" -eq 1 ]; then
+    echo ""
+    echo "Please run: source ${HOME}/.bashrc, or restart your shell, before your first run."
+elif [ "${PROFILE_ADDED}" -eq 1 ]; then
+    echo ""
+    echo "Please run: source ${HOME}/.profile, or restart your shell, before your first run."
+fi
