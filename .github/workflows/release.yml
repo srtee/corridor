@@ -8,28 +8,58 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+            artifact: corridor-linux-x86_64
+          - target: x86_64-apple-darwin
+            os: macos-latest
+            artifact: corridor-macos-x86_64
+          - target: aarch64-apple-darwin
+            os: macos-latest
+            artifact: corridor-macos-aarch64
+
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
         with:
-          python-version: '3.12'
+          targets: ${{ matrix.target }}
 
-      - name: Install uv
-        uses: astral-sh/setup-uv@v4
+      - name: Build release binary
+        run: cargo build --release --target ${{ matrix.target }}
 
-      - name: Build corridor binary
+      - name: Prepare artifact
         run: |
-          uv pip install --system pyinstaller
-          pyinstaller --onefile corridor-terminal.py --name corridor --distpath dist
+          mkdir -p dist
+          cp target/${{ matrix.target }}/release/corridor dist/${{ matrix.artifact }}
+          chmod +x dist/${{ matrix.artifact }}
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: dist/${{ matrix.artifact }}
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          pattern: corridor-*
+          merge-multiple: true
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
-          files: |
-            dist/corridor
+          files: dist/*
           draft: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

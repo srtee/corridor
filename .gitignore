@@ -31,3 +31,4 @@ ENV/
 .DS_Store
 corridor
 corridor-terminal
+/target

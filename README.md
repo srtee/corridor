@@ -8,10 +8,18 @@ Terminal multiplexer with web-based message display.
 curl -sSL https://raw.githubusercontent.com/srtee/corridor/main/install.sh | sh
 ```
 
-Or manually:
+Or download manually from [releases](https://github.com/srtee/corridor/releases):
+- Linux x86_64: `corridor-linux-x86_64`
+- macOS x86_64: `corridor-macos-x86_64`
+- macOS ARM: `corridor-macos-aarch64`
+
+## Building from Source
+
 ```bash
-curl -L -o corridor https://github.com/srtee/corridor/releases/latest/download/corridor
-chmod +x corridor
+git clone https://github.com/srtee/corridor.git
+cd corridor
+cargo build --release
+# Binary at target/release/corridor
 ```
 
 ## Usage
@@ -33,17 +41,23 @@ corridor -s mysession
 
 # With remote server
 corridor -u https://my.domain.com -s mysession
-
-# Or run directly with Python
-python3 corridor-terminal.py -s mysession
 ```
+
+## Keyboard Shortcuts
+
+- `F5` - Retry connection when offline
+- `F6` - Copy web panel content to prompt
 
 ## Architecture
 
-- `corridor` - Pre-built executable (or `corridor-terminal.py`) - Curses-based terminal multiplexer with pty and pyte for ANSI parsing. Main terminal area + 5-line bottom panel (1 separator + 4 message lines).
+- `corridor` - Rust-based terminal emulator with ratatui for rendering. Main terminal area + 5-line bottom panel (1 separator + 4 message lines).
 - `corridor-server.py` - HTTP server with web UI for sending messages.
 
 ## Environment Variables / CLI Args
 
 - `-s, --session` - Session name (used by both server and terminal)
 - `-u, --url` - Base URL for terminal to fetch messages from (default: http://localhost:8080)
+
+## Legacy Python Client
+
+The original Python implementation is available on the `legacy-python` branch.
