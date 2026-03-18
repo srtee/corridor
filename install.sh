@@ -1,5 +1,5 @@
 #!/bin/sh
-# Install script for corridor-terminal
+# Install script for corridor
 # Works with sh, bash, dash, and other POSIX shells
 
 set -e
@@ -32,12 +32,31 @@ while [ $# -gt 0 ]; do
     esac
 done
 
-# Detect OS and set executable name
-case "$(uname -s)" in
-    Linux*)     EXECUTABLE="${BIN_NAME}" ;;
-    Darwin*)    EXECUTABLE="${BIN_NAME}-macos" ;;
-    MINGW*|MSYS*|CYGWIN*) EXECUTABLE="${BIN_NAME}.exe" ;;
-    *)          EXECUTABLE="${BIN_NAME}" ;;
+# Detect OS and architecture
+OS="$(uname -s)"
+ARCH="$(uname -m)"
+
+case "${OS}" in
+    Linux*)
+        case "${ARCH}" in
+            x86_64|amd64) EXECUTABLE="corridor-linux-x86_64" ;;
+            *)            echo "Unsupported architecture: ${ARCH}"; exit 1 ;;
+        esac
+        ;;
+    Darwin*)
+        case "${ARCH}" in
+            x86_64|amd64) EXECUTABLE="corridor-macos-x86_64" ;;
+            arm64|aarch64) EXECUTABLE="corridor-macos-aarch64" ;;
+            *)            echo "Unsupported architecture: ${ARCH}"; exit 1 ;;
+        esac
+        ;;
+    MINGW*|MSYS*|CYGWIN*)
+        EXECUTABLE="corridor-windows-x86_64.exe"
+        ;;
+    *)
+        echo "Unsupported OS: ${OS}"
+        exit 1
+        ;;
 esac
 
 # Create install directory if it doesn't exist
@@ -82,4 +101,4 @@ if [ -f "${HOME}/.profile" ] && ! grep -q "${INSTALL_DIR}" "${HOME}/.profile" 2>
 fi
 
 echo "Installation complete!"
-echo "Run 'corridor-terminal' to start, or restart your shell."
+echo "Run 'corridor' to start, or restart your shell."
