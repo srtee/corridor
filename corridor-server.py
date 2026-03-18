@@ -29,7 +29,7 @@ def sanitize_session_name(name):
 def sanitize_message(msg):
     if msg is None:
         return ""
-    return str(msg)
+    return str(msg).rstrip()
 
 
 def read_session_data(filepath):
