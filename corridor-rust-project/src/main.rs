@@ -1,6 +1,6 @@
 use clap::Parser;
 use crossterm::{
-    event::{poll, read, Event, KeyCode, KeyEventKind},
+    event::{poll, read, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers},
     execute,
     terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
@@ -220,6 +220,112 @@ fn restore_terminal() -> io::Result<()> {
     Ok(())
 }
 
+fn handle_key_event(key: KeyEvent, master_fd: RawFd) {
+    let alt = key.modifiers.contains(KeyModifiers::ALT);
+    let shift = key.modifiers.contains(KeyModifiers::SHIFT);
+    let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
+    
+    match key.code {
+        KeyCode::Char(c) => {
+            if ctrl {
+                if c.is_ascii_lowercase() {
+                    let ctrl_char = (c as u8) & 0x1F;
+                    unsafe { libc::write(master_fd, &ctrl_char as *const _ as *const libc::c_void, 1); }
+                } else if c.is_ascii_uppercase() {
+                    let ctrl_char = (c.to_ascii_lowercase() as u8) & 0x1F;
+                    unsafe { libc::write(master_fd, &ctrl_char as *const _ as *const libc::c_void, 1); }
+                }
+            } else if alt {
+                let bytes = [0x1b, c as u8];
+                unsafe { libc::write(master_fd, bytes.as_ptr() as *const libc::c_void, 2); }
+            } else {
+                let bytes = [c as u8];
+                unsafe { libc::write(master_fd, bytes.as_ptr() as *const libc::c_void, 1); }
+            }
+        }
+        KeyCode::Enter => {
+            if alt {
+                unsafe { libc::write(master_fd, b"\x1b\n".as_ptr() as *const libc::c_void, 2); }
+            } else {
+                unsafe { libc::write(master_fd, b"\n".as_ptr() as *const libc::c_void, 1); }
+            }
+        }
+        KeyCode::Backspace => {
+            if alt {
+                unsafe { libc::write(master_fd, b"\x1b\x7f".as_ptr() as *const libc::c_void, 2); }
+            } else {
+                let b = [0x7f];
+                unsafe { libc::write(master_fd, b.as_ptr() as *const libc::c_void, 1); }
+            }
+        }
+        KeyCode::Up => {
+            let seq = if shift { "\x1b[1;2A" } else if alt { "\x1b[1;3A" } else if ctrl { "\x1b[1;5A" } else { "\x1b[A" };
+            unsafe { libc::write(master_fd, seq.as_ptr() as *const libc::c_void, seq.len()); }
+        }
+        KeyCode::Down => {
+            let seq = if shift { "\x1b[1;2B" } else if alt { "\x1b[1;3B" } else if ctrl { "\x1b[1;5B" } else { "\x1b[B" };
+            unsafe { libc::write(master_fd, seq.as_ptr() as *const libc::c_void, seq.len()); }
+        }
+        KeyCode::Right => {
+            let seq = if shift { "\x1b[1;2C" } else if alt { "\x1b[1;3C" } else if ctrl { "\x1b[1;5C" } else { "\x1b[C" };
+            unsafe { libc::write(master_fd, seq.as_ptr() as *const libc::c_void, seq.len()); }
+        }
+        KeyCode::Left => {
+            let seq = if shift { "\x1b[1;2D" } else if alt { "\x1b[1;3D" } else if ctrl { "\x1b[1;5D" } else { "\x1b[D" };
+            unsafe { libc::write(master_fd, seq.as_ptr() as *const libc::c_void, seq.len()); }
+        }
+        KeyCode::Esc => {
+            unsafe { libc::write(master_fd, b"\x1b".as_ptr() as *const libc::c_void, 1); }
+        }
+        KeyCode::Tab => {
+            if shift {
+                unsafe { libc::write(master_fd, b"\x1b[Z".as_ptr() as *const libc::c_void, 3); }
+            } else if alt {
+                unsafe { libc::write(master_fd, b"\x1b\t".as_ptr() as *const libc::c_void, 2); }
+            } else {
+                unsafe { libc::write(master_fd, b"\t".as_ptr() as *const libc::c_void, 1); }
+            }
+        }
+        KeyCode::Home => {
+            unsafe { libc::write(master_fd, b"\x1b[H".as_ptr() as *const libc::c_void, 3); }
+        }
+        KeyCode::End => {
+            unsafe { libc::write(master_fd, b"\x1b[F".as_ptr() as *const libc::c_void, 3); }
+        }
+        KeyCode::PageUp => {
+            unsafe { libc::write(master_fd, b"\x1b[5~".as_ptr() as *const libc::c_void, 4); }
+        }
+        KeyCode::PageDown => {
+            unsafe { libc::write(master_fd, b"\x1b[6~".as_ptr() as *const libc::c_void, 4); }
+        }
+        KeyCode::Delete => {
+            unsafe { libc::write(master_fd, b"\x1b[3~".as_ptr() as *const libc::c_void, 4); }
+        }
+        KeyCode::Insert => {
+            unsafe { libc::write(master_fd, b"\x1b[2~".as_ptr() as *const libc::c_void, 4); }
+        }
+        KeyCode::F(n) => {
+            let seq = match n {
+                1 => "\x1bOP",
+                2 => "\x1bOQ",
+                3 => "\x1bOR",
+                4 => "\x1bOS",
+                5 => "\x1b[15~",
+                6 => "\x1b[17~",
+                7 => "\x1b[18~",
+                8 => "\x1b[19~",
+                9 => "\x1b[20~",
+                10 => "\x1b[21~",
+                11 => "\x1b[23~",
+                12 => "\x1b[24~",
+                _ => return,
+            };
+            unsafe { libc::write(master_fd, seq.as_ptr() as *const libc::c_void, seq.len()); }
+        }
+        _ => {}
+    }
+}
+
 fn main() -> io::Result<()> {
     let args = Args::parse();
 
@@ -408,38 +514,7 @@ fn main() -> io::Result<()> {
         if poll(std::time::Duration::from_millis(10))? {
             if let Event::Key(key) = read()? {
                 if key.kind == KeyEventKind::Press {
-                    match key.code {
-                        KeyCode::Char(c) => {
-                            let bytes = [c as u8];
-                            unsafe { libc::write(master_fd, bytes.as_ptr() as *const libc::c_void, 1); }
-                        }
-                        KeyCode::Enter => {
-                            unsafe { libc::write(master_fd, b"\n".as_ptr() as *const libc::c_void, 1); }
-                        }
-                        KeyCode::Backspace => {
-                            let b = [0x7f];
-                            unsafe { libc::write(master_fd, b.as_ptr() as *const libc::c_void, 1); }
-                        }
-                        KeyCode::Up => {
-                            unsafe { libc::write(master_fd, b"\x1b[A".as_ptr() as *const libc::c_void, 4); }
-                        }
-                        KeyCode::Down => {
-                            unsafe { libc::write(master_fd, b"\x1b[B".as_ptr() as *const libc::c_void, 4); }
-                        }
-                        KeyCode::Right => {
-                            unsafe { libc::write(master_fd, b"\x1b[C".as_ptr() as *const libc::c_void, 4); }
-                        }
-                        KeyCode::Left => {
-                            unsafe { libc::write(master_fd, b"\x1b[D".as_ptr() as *const libc::c_void, 4); }
-                        }
-                        KeyCode::Esc => {
-                            unsafe { libc::write(master_fd, b"\x1b".as_ptr() as *const libc::c_void, 1); }
-                        }
-                        KeyCode::Tab => {
-                            unsafe { libc::write(master_fd, b"\t".as_ptr() as *const libc::c_void, 1); }
-                        }
-                        _ => {}
-                    }
+                    handle_key_event(key, master_fd);
                 }
             }
         }
