@@ -2,6 +2,8 @@
 
 Terminal multiplexer with web-based message display.
 
+![Demo](demo_corridor.gif)
+
 ## Installation
 
 ```bash
