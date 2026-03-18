@@ -29,7 +29,7 @@ def sanitize_session_name(name):
 def sanitize_message(msg):
     if msg is None:
         return ""
-    return str(msg).rstrip()
+    return str(msg).rstrip()[:600]
 
 
 def read_session_data(filepath):
@@ -357,7 +357,7 @@ HTML = """<!DOCTYPE html>
         </div>
         <div class="form-group">
             <label for="message">Command / Message</label>
-            <textarea id="message" placeholder="Enter message..." aria-describedby="send-hint"></textarea>
+            <textarea id="message" placeholder="Enter message..." aria-describedby="send-hint" maxlength="600"></textarea>
         </div>
         <button id="send" aria-describedby="send-hint">Send</button>
         <div class="hint-text" id="send-hint" style="margin-top: 4px;">Ctrl+Enter to send</div>
