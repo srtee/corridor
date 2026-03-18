@@ -293,6 +293,7 @@ fn main() -> io::Result<()> {
 
     let mut parser = vt100::Parser::new(main_rows, cols, 0);
     let mut buf = [0u8; 4096];
+    let mut last_term_size: (u16, u16) = (cols, main_rows);
 
     let mut last_error: Option<String> = None;
     let mut session_data: String = String::new();
@@ -332,15 +333,37 @@ fn main() -> io::Result<()> {
             last_error = None;
         }
 
+        let area = terminal.size()?;
+        let new_cols = area.width;
+        let new_rows = area.height.saturating_sub(PANEL_HEIGHT + 1);
+        
+        if new_cols != last_term_size.0 || new_rows != last_term_size.1 {
+            parser.set_size(new_rows, new_cols);
+            last_term_size = (new_cols, new_rows);
+            
+            unsafe {
+                let win = Winsize {
+                    ws_row: new_rows,
+                    ws_col: new_cols,
+                    ws_xpixel: 0,
+                    ws_ypixel: 0,
+                };
+                libc::ioctl(master_fd, 0x5414, &win);
+            }
+        }
+
         terminal.draw(|f| {
+            let area = f.area();
+            let term_height = area.height.saturating_sub(PANEL_HEIGHT + 1);
+            
             let chunks = Layout::default()
                 .direction(Direction::Vertical)
                 .constraints([
-                    Constraint::Min(1),
+                    Constraint::Length(term_height),
                     Constraint::Length(1),
                     Constraint::Length(PANEL_HEIGHT),
                 ])
-                .split(f.area());
+                .split(area);
 
             let term_area = chunks[0];
             let sep_area = chunks[1];
