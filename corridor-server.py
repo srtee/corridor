@@ -112,6 +112,7 @@ HTML = """<!DOCTYPE html>
             background: none;
             border: none;
             font-family: inherit;
+            text-transform: none;
         }
         .session::before {
             content: "● ";
@@ -206,6 +207,7 @@ HTML = """<!DOCTYPE html>
             text-align: left;
             cursor: pointer;
             padding: 0;
+            text-transform: none;
         }
         .session-item-name:focus-visible {
             outline: 2px solid #58a6ff;
@@ -357,7 +359,7 @@ HTML = """<!DOCTYPE html>
         </div>
         <div class="form-group">
             <label for="message">Command / Message</label>
-            <textarea id="message" placeholder="Enter message..." aria-describedby="send-hint" maxlength="600"></textarea>
+            <textarea id="message" placeholder="Enter message... (max 600 chars)" aria-describedby="send-hint" maxlength="600"></textarea>
         </div>
         <button id="send" aria-describedby="send-hint">Send</button>
         <div class="hint-text" id="send-hint" style="margin-top: 4px;">Ctrl+Enter to send</div>
