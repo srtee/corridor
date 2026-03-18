@@ -105,8 +105,8 @@ echo "Run 'corridor' to start."
 
 if [ "${BASHRC_ADDED}" -eq 1 ]; then
     echo ""
-    echo "Please run: source ${HOME}/.bashrc, or restart your shell, before your first run."
+    echo "Please run 'source ${HOME}/.bashrc' (without quotes), or restart your shell, before your first run."
 elif [ "${PROFILE_ADDED}" -eq 1 ]; then
     echo ""
-    echo "Please run: source ${HOME}/.profile, or restart your shell, before your first run."
+    echo "Please run 'source ${HOME}/.profile' (without quotes), or restart your shell, before your first run."
 fi
