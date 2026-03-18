@@ -63,3 +63,7 @@ corridor -u https://my.domain.com -s mysession
 ## Legacy Python Client
 
 The original Python implementation is available on the `legacy-python` branch.
+
+## Note
+
+This project was written with GLM-5 in OpenCode Zen.
