@@ -418,6 +418,12 @@ fn main() -> io::Result<()> {
         if pid == 0 {
             setsid();
 
+            #[cfg(target_os = "macos")]
+            libc::ioctl(client_fd, 0x20007461 as libc::c_ulong, 0);
+
+            #[cfg(target_os = "linux")]
+            libc::ioctl(client_fd, 0x540E as libc::c_ulong, std::ptr::null::<libc::c_char>());
+
             libc::dup2(client_fd, 0);
             libc::dup2(client_fd, 1);
             libc::dup2(client_fd, 2);
